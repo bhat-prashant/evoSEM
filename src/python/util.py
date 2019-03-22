@@ -9,7 +9,7 @@ from evaluate import *
 import random
 from copy import deepcopy
 from deap.tools import HallOfFame
-
+import itertools
 
 def extract_model(individual):
     measurement_model = []
@@ -117,13 +117,18 @@ def validate_individual(concepts,variables, ind):
         if individual.out_degree(var) > 1:
             for successor in succ[:-1]:
                 individual.remove_edges_from(var, successor)
-    # if disconnected, add connection between concepts in structural model
-    # if not nx.is_strongly_connected(individual):
-    #     for con in concepts:
-    #         neighbors = list(individual.neighbors(con))
-    #         if individual.out_degree(con) == 0:
-    #             succ = list(individual.successors(con))
-    #             pred = list(individual.predecessors(con))
+
+    # at least and at most one edge between concepts
+    concept_tuples = itertools.combinations(concepts, 2)
+    for pairs in concept_tuples:
+        edges = individual.number_of_edges(pairs[0], pairs[1]) + individual.number_of_edges(pairs[1], pairs[0])
+        if edges > 1:
+            individual.remove_edge(pairs[0], pairs[1])
+        elif edges < 1:
+            individual.add_edge(pairs[0], pairs[1])
+
+
+
     return individual
 
 

@@ -2,6 +2,7 @@
 __author__ = "Prashant Shivarm Bhat"
 __email__ = "PrashantShivaram@outlook.com"
 import warnings
+
 warnings.simplefilter("ignore")
 
 import abc
@@ -9,12 +10,15 @@ import random
 import warnings
 from deap import creator, base, tools, algorithms
 from sklearn.base import BaseEstimator, TransformerMixin
+
 random.seed(10)
 import numpy as np
+
 np.random.seed(10)
 from itertools import cycle
 from util import *
 import pandas as pd
+
 
 class AllRelations(BaseEstimator, TransformerMixin, metaclass=abc.ABCMeta):
 
@@ -44,8 +48,7 @@ class AllRelations(BaseEstimator, TransformerMixin, metaclass=abc.ABCMeta):
         self._toolbox.register('mate', mate, self._concepts, self._variables)
         self._toolbox.register('mutate', mutate, self._concepts, self._variables)
 
-
-    def _initialize_SEM(self, ind):
+    def _initialize_SEM(self, individual):
         variables = deepcopy(self._variables)
         pool = cycle(self._concepts)
         # measurement model
@@ -53,14 +56,13 @@ class AllRelations(BaseEstimator, TransformerMixin, metaclass=abc.ABCMeta):
             if variables:
                 observation = random.choice(variables)
                 variables.remove(observation)
-                ind.add_edge(observation, concept)
+                individual.add_edge(observation, concept)
             else:
                 break
         # Structural model
-        for concept in self._concepts:
-            con = random.choice(self._concepts)
-            ind.add_edge(concept, con)
-        ind.remove_edges_from(ind.selfloop_edges())
+        concept_tuples = itertools.combinations(self._concepts, 2)
+        for pairs in concept_tuples:
+            individual.add_edge(pairs[0], pairs[1])
 
     def _create_individual(self):
         ind = nx.DiGraph()
@@ -78,12 +80,11 @@ class AllRelations(BaseEstimator, TransformerMixin, metaclass=abc.ABCMeta):
         stats.register("min", np.min)
         stats.register("max", np.max)
         pop, log = algorithms.eaSimple(self._pop, toolbox=self._toolbox,
-                                  cxpb=self._crossover_rate, mutpb=self._mutation_rate, ngen=self._generation,
-                                  stats=stats, halloffame=self._hof, verbose=True)
+                                       cxpb=self._crossover_rate, mutpb=self._mutation_rate, ngen=self._generation,
+                                       stats=stats, halloffame=self._hof, verbose=True)
         log_dataframe = pd.DataFrame(log)
         log_dataframe.to_csv('../../results/generation_log.csv')
         compose_SEM(self._hof)
-
 
     def fit(self):
         self._setup_toolbox()
@@ -92,8 +93,5 @@ class AllRelations(BaseEstimator, TransformerMixin, metaclass=abc.ABCMeta):
         pass
 
 
-
-all = AllRelations(generation=1, pop_size=3)
+all = AllRelations(generation=1, pop_size=20)
 all.fit()
-
-
