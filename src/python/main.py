@@ -2,7 +2,7 @@
 __author__ = "Prashant Shivarm Bhat"
 __email__ = "PrashantShivaram@outlook.com"
 import warnings
-
+import pickle
 warnings.simplefilter("ignore")
 
 import abc
@@ -24,6 +24,17 @@ class AllRelations(BaseEstimator, TransformerMixin, metaclass=abc.ABCMeta):
 
     def __init__(self, generation=5, pop_size=20, mutation_rate=0.3,
                  crossover_rate=0.7):
+        """ Main class for creating SEM model
+
+        :param generation: int,
+            number of generations to be run during evolution
+        :param pop_size: int
+            number of individuals in the initial population
+        :param mutation_rate: float
+            Percentage of individuals in the population to be mutated during evolution
+        :param crossover_rate: float
+            Percentage of individuals in the population to be mated during evolution
+        """
 
         self._generation = generation
         self._pop_size = pop_size
@@ -31,10 +42,15 @@ class AllRelations(BaseEstimator, TransformerMixin, metaclass=abc.ABCMeta):
         self._crossover_rate = crossover_rate
         self._variables = ['x1', 'x2', 'x3', 'x4', 'x5']
         self._concepts = ['c1', 'c2', 'c3']
+        self._fit_indices = ["cfi","tli", "aic", "bic", "rmsea"]
         self._pop = None
         self._toolbox = None
 
     def _setup_toolbox(self):
+        """ Sets up DEAP toolbox for evolution
+
+        :return: None
+        """
         with warnings.catch_warnings():
             warnings.simplefilter('ignore')
             creator.create('FitnessMulti', base.Fitness, weights=(1.0, 1.0, 0.5, 0.5, -0.5))
@@ -49,6 +65,12 @@ class AllRelations(BaseEstimator, TransformerMixin, metaclass=abc.ABCMeta):
         self._toolbox.register('mutate', mutate, self._concepts, self._variables)
 
     def _initialize_SEM(self, individual):
+        """ Initialises individual with random connections
+        Random connections are created separately for measurement and structural model
+
+        :param individual: an instance of individual (networkx graph)
+        :return:
+        """
         variables = deepcopy(self._variables)
         pool = cycle(self._concepts)
         # measurement model
@@ -65,6 +87,11 @@ class AllRelations(BaseEstimator, TransformerMixin, metaclass=abc.ABCMeta):
             individual.add_edge(pairs[0], pairs[1])
 
     def _create_individual(self):
+        """ Create a individual (an instance of networkx DiGraph)
+
+        :return: Individual
+            an instance of networkx DiGraph
+        """
         ind = nx.DiGraph()
         ind.add_nodes_from(self._variables)
         ind.add_nodes_from(self._concepts)
@@ -72,26 +99,31 @@ class AllRelations(BaseEstimator, TransformerMixin, metaclass=abc.ABCMeta):
         return ind
 
     def _evolve(self):
+        """ Start evolution
+
+        :return: None
+        """
         print('Start of evolution')
         self._hof = tools.HallOfFame(10)
-        stats = tools.Statistics(lambda ind: ind.fitness.values[0])
-        stats.register("avg", np.mean)
-        stats.register("std", np.std)
-        stats.register("min", np.min)
-        stats.register("max", np.max)
+        multi = create_multistatistics(self._fit_indices)
         pop, log = algorithms.eaSimple(self._pop, toolbox=self._toolbox,
                                        cxpb=self._crossover_rate, mutpb=self._mutation_rate, ngen=self._generation,
-                                       stats=stats, halloffame=self._hof, verbose=True)
-        log_dataframe = pd.DataFrame(log)
-        log_dataframe.to_csv('../../results/generation_log.csv')
+                                       stats=multi, halloffame=self._hof, verbose=True)
+        save_log(self._fit_indices, log)
         compose_SEM(self._hof)
 
     def fit(self):
+        """ Public method to start evolutionary approach to SEM modelling
+        Results will be stored under ../../results
+
+        :return: None
+        """
         self._setup_toolbox()
         self._pop = self._toolbox.population(self._pop_size)
         self._evolve()
-        pass
 
 
-all = AllRelations(generation=1, pop_size=20)
+
+
+all = AllRelations(generation=1, pop_size=5)
 all.fit()

@@ -8,10 +8,18 @@ import matplotlib.pyplot as plt
 from evaluate import *
 import random
 from copy import deepcopy
-from deap.tools import HallOfFame
+from deap.tools import HallOfFame, Statistics, MultiStatistics
 import itertools
+import numpy as np
+import pandas as pd
 
 def extract_model(individual):
+    """ Convert netwrokx graph to 'lavaan' specific SEM model string
+
+    :param individual: an instance of individual (networkx graph)
+    :return: string,
+        lavaan specific model description
+    """
     measurement_model = []
     structural_model = []
     for node in individual._pred:
@@ -35,6 +43,13 @@ def extract_model(individual):
 
 
 def extract_fitness(fitness_str):
+    """ Parse results from fitness string
+
+    :param fitness_str: String
+        String received from R
+    :return: tuple
+        fitness values as a tuple
+    """
     fitness = re.findall("\d+\.\d+", fitness_str)
     if fitness:
         fitness = [float(i) for i in fitness]
@@ -42,13 +57,20 @@ def extract_fitness(fitness_str):
 
 
 def compose_SEM(individual):
+    """ Plot / save an individual (networkx graph) using plt
+    Future Work: make graph generation dynamic
+
+    :param individual: an instance of individual (networkx graph)
+    :return: None
+    """
     if isinstance(individual, HallOfFame):
         for i, ind in enumerate(individual):
             fig = plt.figure()
             plt.title('Fitness vales - CFI: {}, TLI: {}, \n AIC: {}, BIC: {}, RMSEA: {}'.
                       format(ind.fitness.values[0], ind.fitness.values[1], ind.fitness.values[2],
                              ind.fitness.values[3], ind.fitness.values[4]))
-            nx.draw(ind, with_labels=True)
+            values = [0.25 if 'x' in node else 0.75 for node in ind.nodes()]
+            nx.draw_circular(ind, with_labels=True, font_color='white', node_size=500, cmap=plt.get_cmap('RdBu'), node_color=values)
             plt.savefig('../../results/SEM_{}.png'.format(i), format='PNG')
             # plt.show()
     elif isinstance(individual, nx.DiGraph):
@@ -59,6 +81,12 @@ def compose_SEM(individual):
 
 
 def evaluate(individual):
+    """ Evaluation function for evolution
+
+    :param individual: an instance of individual (networkx graph)
+    :return: tuple
+        fitness values as tuple
+    """
     model = extract_model(individual)
     fitness = (0, 0, 0, 0, 1)
     try:
@@ -70,6 +98,18 @@ def evaluate(individual):
 
 
 def mate(concepts, variables, individual_1, individual_2):
+    """ Mate operator for evolution
+    Switches structural model between two individuals
+
+    :param concepts: list
+        list of strings as probable concepts
+    :param variables: list
+        list of variables in the dataset
+    :param individual_1: an instance of individual (networkx graph)
+    :param individual_2: an instance of individual (networkx graph)
+    :return: tuple
+        tuple of two new offsprings (an instance of individuals (networkx graph))
+    """
     ind_1 = deepcopy(individual_1)
     ind_2 = deepcopy(individual_2)
     c_1 = individual_1.subgraph(concepts)
@@ -84,6 +124,18 @@ def mate(concepts, variables, individual_1, individual_2):
 
 
 def mutate(concepts,variables, ind):
+    """ Mutate operator for evolution
+    Between two randomly chosen concepts, exchanges two variables between concepts.
+    and reverses direction between those concepts
+
+    :param concepts: list
+        list of strings as probable concepts
+    :param variables: list
+        list of variables in the dataset
+    :param ind: an instance of individual (networkx graph)
+    :return: tuple
+        tuple of one offspring (an instance of individual (networkx graph))
+    """
     individual = deepcopy(ind)
     concept_1 = random.choice(concepts)
     concept_2 = random.choice(concepts)
@@ -108,8 +160,18 @@ def mutate(concepts,variables, ind):
     individual = validate_individual(concepts, variables, individual)
     return individual,
 
-#TODO --
+
 def validate_individual(concepts,variables, ind):
+    """ Validates individual
+    Verify whether there is at least and at most one edge between all nodes
+
+    :param concepts: list
+        list of strings as probable concepts
+    :param variables: list
+        list of variables in the dataset
+    :param ind: an instance of individual (networkx graph)
+    :return: an instance of individual (networkx graph)
+    """
     individual = deepcopy(ind)
     # remove redundant edges from measurement model
     for var in variables:
@@ -127,22 +189,76 @@ def validate_individual(concepts,variables, ind):
         elif edges < 1:
             individual.add_edge(pairs[0], pairs[1])
 
-
-
     return individual
 
 
+def create_multistatistics(fitness_indices):
+    """ create multi statistics for evolution
+
+    :param fitness_indices: list
+        list of strings representing fit indices. These should be in same order as used during evolution
+    :return: an instance of deap.tools.MultiStatistics
+    """
+    statistics = {}
+    for i, fit_index in enumerate(fitness_indices):
+        stats = create_statistics(fit_index, i)
+        statistics[fit_index] = stats
+    multi = MultiStatistics(statistics)
+    return multi
+
+def create_statistics(fit_index, index):
+    """ Create deap.tools.Statistics instance for the given name and index
+
+    :param fit_index: string
+        name for the statistic
+    :param index: int
+        This is the index of the statistic in a multi-objective fitness tuple
+    :return: deap.tools.Statistics
+    """
+    stats = Statistics(lambda ind: ind.fitness.values[index])
+    stats.register("{}_avg".format(fit_index), np.mean)
+    stats.register("{}_std".format(fit_index), np.std)
+    stats.register("{}_min".format(fit_index), np.min)
+    stats.register("{}_max".format(fit_index), np.max)
+    return stats
+
+def save_log(fitness_indices, logbook):
+    """ Save evolutionary log to csv
+
+    :param fitness_indices: list
+        List of strings representing fitnesses in a multi objective fitness scenario
+    :param logbook:  an instance of deap.tools.Logbook
+    :return: None
+    """
+    for fit_index in fitness_indices:
+        fit_df = pd.DataFrame(logbook.chapters[fit_index])
+        generation_df = pd.DataFrame(logbook)
+        result = pd.concat([fit_df, generation_df],  sort=False, axis=1)
+        result.to_csv('../../results/{}_log.csv'.format(fit_index))
 
 
+def plot_logbook(logbook):
+    gen = logbook.select("gen")
+    fit_mins = logbook.chapters["cfi"].select("min")
+    size_avgs = logbook.chapters["cfi"].select("max")
+    fig, ax1 = plt.subplots()
+    line1 = ax1.plot(gen, fit_mins, "b-", label="Minimum Fitness")
+    ax1.set_xlabel("Generation")
+    ax1.set_ylabel("CFI", color="b")
+    for tl in ax1.get_yticklabels():
+        tl.set_color("b")
 
+    ax2 = ax1.twinx()
+    line2 = ax2.plot(gen, size_avgs, "r-", label="Maxiimum Fitness")
+    ax2.set_ylabel("Size", color="r")
+    for tl in ax2.get_yticklabels():
+        tl.set_color("r")
 
+    lns = line1 + line2
+    labs = [l.get_label() for l in lns]
+    ax1.legend(lns, labs, loc="center right")
 
-
-
-
-
-
-
+    plt.show()
 
 
 
