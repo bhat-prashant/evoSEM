@@ -125,5 +125,5 @@ class AllRelations(BaseEstimator, TransformerMixin, metaclass=abc.ABCMeta):
 
 
 
-all = AllRelations(generation=1, pop_size=5)
+all = AllRelations(generation=10, pop_size=20)
 all.fit()

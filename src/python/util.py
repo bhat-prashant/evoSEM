@@ -51,8 +51,10 @@ def extract_fitness(fitness_str):
         fitness values as a tuple
     """
     fitness = re.findall("\d+\.\d+", fitness_str)
-    if fitness:
+    if fitness and 'warning' not in fitness_str:
         fitness = [float(i) for i in fitness]
+    else:
+        raise Exception('Warning occured')
     return tuple(fitness)
 
 
